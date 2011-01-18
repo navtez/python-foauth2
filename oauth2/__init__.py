@@ -1,4 +1,7 @@
 """
+OAuth2-compatible version of the annoyingly-named python-oauth2
+source: https://github.com/dgouldin/python-oauth2/
+
 The MIT License
 
 Copyright (c) 2007 Leah Culver, Joe Stump, Mark Paschal, Vic Fryzel
@@ -35,6 +38,17 @@ try:
 except ImportError:
     from cgi import parse_qs, parse_qsl
 
+try:
+    # Python 2.6?
+    import json
+    simplejson = json
+except ImportError:
+    try: 
+        # Have simplejson?
+        import simplejson
+    except ImportError:
+        # Have django or are running in the Google App Engine?
+        from django.utils import simplejson
 
 VERSION = '1.0' # Hi Blaine!
 HTTP_METHOD = 'GET'
@@ -747,7 +761,7 @@ class Client2(object):
 
         # prepare required args
         args = {
-            'type': 'web_server',
+            'response_type': 'code',
             'client_id': self.client_id,
         }
 
@@ -765,7 +779,7 @@ class Client2(object):
         return '%s?%s' % (urlparse.urljoin(self.oauth_base_url, endpoint),
             urllib.urlencode(args))
 
-    def access_token(self, code, redirect_uri, secret_type=None,
+    def access_token(self, code, redirect_uri, grant_type=None,
         endpoint='access_token'):
         """Get an access token from the supplied code
         https://svn.tools.ietf.org/html/draft-hammer-oauth2-00#section-3.5.2.2
@@ -777,7 +791,6 @@ class Client2(object):
         if redirect_uri is None:
             raise ValueError("Redirect_uri must be set.")
         args = {
-            'type': 'web_server',
             'client_id': self.client_id,
             'client_secret': self.client_secret,
             'code': code,
@@ -785,20 +798,16 @@ class Client2(object):
         }
 
         # prepare optional args
-        if secret_type is not None:
-            args['secret_type'] = secret_type
+        if grant_type is not None:
+            args['grant_type'] = grant_type
 
         uri = urlparse.urljoin(self.oauth_base_url, endpoint)
-        body = urllib.urlencode(args)
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        }
-
-        response, content = self.http.request(uri, method='POST', body=body,
-            headers=headers)
+        uri = '%s?%s' % (uri, urllib.urlencode(args))
+        
+        response, content = self.http.request(uri)
         if not response.status == 200:
-            raise Error(content)
-        response_args = Client2._split_url_string(content)
+            raise Error(str(response.status))
+        response_args = simplejson.loads(content)
 
         error = response_args.pop('error', None)
         if error is not None:
@@ -851,5 +860,11 @@ class Client2(object):
         args.update(params or {})
         if access_token is not None and method == 'GET':
             args[token_param] = access_token
+        elif access_token is None and method == 'GET':
+            args.update({
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+            })
+        
         uri = '%s?%s' % (base_uri, urllib.urlencode(args))
         return self.http.request(uri, method=method, body=body, headers=headers)
