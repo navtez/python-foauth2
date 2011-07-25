@@ -12,7 +12,6 @@ setup(name="foauth2",
       license = "MIT License",
       keywords="oauth",
       zip_safe = True,
-      tests_require=['nose', 'coverage', 'mox'],
       py_modules=['foauth2'],
       classifiers=[
         'Intended Audience :: Developers',
