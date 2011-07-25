@@ -161,7 +161,7 @@ class Client(object):
         if not response.code == 200:
             raise Error(response.read())
 
-        response_args = Client2._split_url_string(content)
+        response_args = Client._split_url_string(content)
         return response_args
 
     def request(self, uri, body=None, headers=None, method='GET'):
