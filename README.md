@@ -1,11 +1,17 @@
 # Overview
 
 This is a fork of a fork of a fork. See (http://github.com/OfflineLabs/python-oauth2) for that history. A number of notable differences exist between this code and its forefathers:
+
 * 0% unit test coverage.
+
 * Lightweight at less than 200 lines, including blanks and docstrings.
+
 * Completely removed all the OAuth 1.0 code.
+
 * Completely removed all non-stdlib dependencies (goodbye httplib2, you won't be missed!).
+
 * Implements a later version of the spec than it's parent.
+
 * I'm not sure which version but google's auth2 API accepts this implementation.
 
 # goo.gl URL shortener example
