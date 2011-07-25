@@ -113,7 +113,6 @@ class Client(object):
             'redirect_uri': redirect_uri,
             'grant_type' : 'authorization_code',
         }
-        print "DATA", data
         if scope is not None:
             data['scope'] = scope
         body = urllib.urlencode(data)
@@ -122,7 +121,6 @@ class Client(object):
                    'user_agent' : 'HiveFire-OAuth2a',
                   }
 
-        print (uri, body, headers)
         response = self.request(uri, body=body, method='POST', headers=headers)
         if not response.code == 200:
             raise Error(response.read())
