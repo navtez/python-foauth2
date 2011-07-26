@@ -48,13 +48,9 @@ the authorize_url and redeem_code functions.  GooglAPI sets up the defaults:
         refresh_uri = 'https://accounts.google.com/o/oauth2/token'
         scope = 'https://www.googleapis.com/auth/urlshortener'
         # Shortener API
- 	api_uri = 'https://www.googleapis.com/urlshortener/v1/url'
+        api_uri = 'https://www.googleapis.com/urlshortener/v1/url'
 
-You are responsible for storing the access and refresh key for later use.
-Here is the full (and not very exciting) version of foauth.GooglAPI that
-we use.  It has a custom redirect URI, includes our goo.gl api key,
-and saves the access & refresh tokens to a django model names AuthKey.
-Define your own refresh_token() replacement to store stuff where you like.
+You are responsible for storing the access and refresh key for later use. Here is the full (and not very exciting) version of foauth.GooglAPI that we use.  It has a custom redirect URI, includes our goo.gl api key, and saves the access & refresh tokens to a django model names AuthKey. Define your own refresh_token() replacement to store stuff where you like.
 
 class GooglAPI(foauth2.GooglAPI):
     redirect_uri = 'http://hivefire.com/oauth'
