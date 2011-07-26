@@ -186,11 +186,13 @@ class Client(object):
         try:
             response = self._request(uri, body=body, headers=headers, method=method)
         except urllib2.HTTPError as e:
-            if 400 <= e.code < 500:
+            if 400 <= e.code < 500 and e.code != 404:
                 # any 400 code is acceptable to signal that the access token is expired.
                 self.refresh_access_token()
                 headers['Authorization'] = 'Bearer %s' % self.access_token
                 response = self._request(uri, body=body, headers=headers, method=method)
+            else:
+                raise
 
         if response.code == 200:
             return simplejson.loads(response.read())
