@@ -52,14 +52,14 @@ the authorize_url and redeem_code functions.  GooglAPI sets up the defaults:
 
 You are responsible for storing the access and refresh key for later use. Here is the full (and not very exciting) version of foauth.GooglAPI that we use.  It has a custom redirect URI, includes our goo.gl api key, and saves the access & refresh tokens to a django model names AuthKey. Define your own refresh_token() replacement to store stuff where you like.
 
-class GooglAPI(foauth2.GooglAPI):
-    redirect_uri = 'http://hivefire.com/oauth'
-    api_uri = 'https://www.googleapis.com/urlshortener/v1/url?key=%s' % GOOGL_KEY
+    class GooglAPI(foauth2.GooglAPI):
+        redirect_uri = 'http://hivefire.com/oauth'
+        api_uri = 'https://www.googleapis.com/urlshortener/v1/url?key=%s' % GOOGL_KEY
 
-    def refresh_token(self, *args, **kwargs):
-        access, refresh = super(GooglAPI, self).refresh_token(*args, **kwargs)
-        # save the updated access/refresh tokens
-        AuthKey.objects.filter(service='goo.gl').update(access_token=access,
-                                                        access_secret=refresh,
-                                                        acquired_date=datetime.datetime.now())
-        return access, refresh
+        def refresh_token(self, *args, **kwargs):
+            access, refresh = super(GooglAPI, self).refresh_token(*args, **kwargs)
+            # save the updated access/refresh tokens
+	    query = AuthKey.objects.filter(service='goo.gl')
+            query.update(access_token=access, access_secret=refresh,
+                         acquired_date=datetime.datetime.now())
+            return access, refresh
