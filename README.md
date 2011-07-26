@@ -59,7 +59,7 @@ You are responsible for storing the access and refresh key for later use. Here i
         def refresh_token(self, *args, **kwargs):
             access, refresh = super(GooglAPI, self).refresh_token(*args, **kwargs)
             # save the updated access/refresh tokens
-	    query = AuthKey.objects.filter(service='goo.gl')
+            query = AuthKey.objects.filter(service='goo.gl')
             query.update(access_token=access, access_secret=refresh,
                          acquired_date=datetime.datetime.now())
             return access, refresh
