@@ -10,7 +10,7 @@ Based on https://github.com/OfflineLabs/python-oauth2/
 
 The MIT License
 
-Portions Copyright (c) 2011 Jack Diederich c/o HiveFire Inc.
+Portions Copyright (c) 2011 Jack Diederich c/o Curata, Inc.
 Portions Copyright (c) 2007 Leah Culver, Joe Stump, Mark Paschal, Vic Fryzel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -42,7 +42,7 @@ except ImportError:
     # Have django or are running in the Google App Engine?
     from django.utils import simplejson
 
-VERSION = '0.9'
+VERSION = '0.9.1'
 
 class Error(RuntimeError):
     """Generic exception class."""
@@ -78,7 +78,8 @@ class Client(object):
         self.access_token = access_token
         self.refresh_token = refresh_token
 
-    def authorization_url(self, auth_uri=None, redirect_uri=None, scope=None):
+    def authorization_url(self, auth_uri=None, redirect_uri=None, scope=None,
+                          state=None, access_type='offline', approval_prompt=None):
         """ Get the URL to redirect the user for client authorization """
         if redirect_uri is None:
             redirect_uri = self.redirect_uri
@@ -93,6 +94,16 @@ class Client(object):
                  }
         if scope:
             params['scope'] = scope
+
+        if state:
+            params['state'] = state
+
+        if access_type:
+            # defaults to 'offline' which requests a refresh_token too
+            params['access_type'] = access_type
+
+        if approval_prompt:
+            params['approval_prompt'] = approval_prompt
 
         return '%s?%s' % (auth_uri, urllib.urlencode(params))
 
@@ -135,7 +146,8 @@ class Client(object):
             raise Error(error)
 
         self.access_token = response_args['access_token']
-        self.refresh_token = response_args['refresh_token']
+        # refresh token is optional
+        self.refresh_token = response_args.get('refresh_token', '')
         return self.access_token, self.refresh_token
 
     def refresh_access_token(self, refresh_uri=None, refresh_token=None):
