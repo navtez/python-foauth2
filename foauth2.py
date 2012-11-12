@@ -32,6 +32,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
+import random
+import time
 import urllib
 import urllib2
 import urlparse
@@ -42,7 +44,7 @@ except ImportError:
     # Have django or are running in the Google App Engine?
     from django.utils import simplejson
 
-VERSION = '0.9.1'
+VERSION = '1.0'
 
 class Error(RuntimeError):
     """Generic exception class."""
@@ -78,8 +80,8 @@ class Client(object):
         self.access_token = access_token
         self.refresh_token = refresh_token
 
-    def authorization_url(self, auth_uri=None, redirect_uri=None, scope=None,
-                          state=None, access_type='offline', approval_prompt=None):
+    def authorization_url(self, auth_uri=None, redirect_uri=None, scope=None, state=None,
+                          access_type='offline', approval_prompt=None):
         """ Get the URL to redirect the user for client authorization """
         if redirect_uri is None:
             redirect_uri = self.redirect_uri
@@ -99,7 +101,7 @@ class Client(object):
             params['state'] = state
 
         if access_type:
-            # defaults to 'offline' which requests a refresh_token too
+            # 'offline' requests get a refresh_token too
             params['access_type'] = access_type
 
         if approval_prompt:
@@ -137,10 +139,10 @@ class Client(object):
             headers['user-agent'] = self.user_agent
 
         response = self._request(refresh_uri, body=body, method='POST', headers=headers)
+
         if response.code != 200:
             raise Error(response.read())
         response_args = simplejson.loads(response.read())
-
         error = response_args.pop('error', None)
         if error is not None:
             raise Error(error)
@@ -150,7 +152,7 @@ class Client(object):
         self.refresh_token = response_args.get('refresh_token', '')
         return self.access_token, self.refresh_token
 
-    def refresh_access_token(self, refresh_uri=None, refresh_token=None):
+    def refresh_access_token(self, refresh_uri=None, refresh_token=None, grant_type='refresh_token'):
         """  Get a new access token from the supplied refresh token """
 
         if refresh_uri is None:
@@ -163,7 +165,7 @@ class Client(object):
             'client_id': self.client_id,
             'client_secret': self.client_secret,
             'refresh_token': refresh_token,
-            'grant_type' : 'refresh_token',
+            'grant_type' : grant_type,
         }
         body = urllib.urlencode(args)
 
@@ -186,7 +188,15 @@ class Client(object):
             raise ValueError('POST requests must have a body')
 
         request = urllib2.Request(uri, body, headers)
-        return urllib2.urlopen(request, timeout=self.timeout)
+        try:
+            return urllib2.urlopen(request, timeout=self.timeout)
+        except urllib2.HTTPError as e:
+            e.body = e.read()
+            e.fp = StringIO.StringIO(e.body)
+            e.read = e.fp.read
+            if e.body:
+                e.msg += ' %r' % e.body
+            raise
 
     def request(self, uri, body, headers, method='GET'):
         """ perform a HTTP request using OAuth authentication.
@@ -198,7 +208,10 @@ class Client(object):
         try:
             response = self._request(uri, body=body, headers=headers, method=method)
         except urllib2.HTTPError as e:
-            if 400 <= e.code < 500 and e.code != 404:
+            if e.code == 403 and 'rate' in e.body.lower() and 'limit' in e.body.lower():
+                self.handle_rate_limit()
+                response = self._request(uri, body=body, headers=headers, method=method)
+            elif 400 <= e.code < 500 and e.code != 404:
                 # any 400 code is acceptable to signal that the access token is expired.
                 self.refresh_access_token()
                 headers['Authorization'] = 'Bearer %s' % self.access_token
@@ -207,8 +220,13 @@ class Client(object):
                 raise
 
         if response.code == 200:
-            return simplejson.loads(response.read())
+            body = response.read()
+            return simplejson.loads(body)
         raise ValueError(response.read())
+
+    def handle_rate_limit(self):
+        time.sleep(1 + random.random() * 3)
+
 
 class GooglAPI(Client):
     user_agent = 'python-foauth2'
@@ -232,3 +250,95 @@ class GooglAPI(Client):
         stat_url = self.api_uri + '&' + urllib.urlencode(params)
         headers = {'Content-Type': 'application/json'}
         return self.request(stat_url, None, headers)
+
+
+class GAnalyticsAPI(GooglAPI):
+    # OAuth API
+    refresh_uri = 'https://accounts.google.com/o/oauth2/token'
+    scope = 'https://www.googleapis.com/auth/analytics.readonly'
+    service = 'ganalytics'
+
+    # data API
+    def lookup_table_id(self, ga_id):
+        """ Find the table_id for the given analytics id """
+        ua, first, second = ga_id.split('-')
+        url = 'https://www.googleapis.com/analytics/v3/management/accounts/%s/webproperties/UA-%s-%s/profiles'
+        url = url % (first, first, second)
+        headers = {'Content-Type' : 'application/json'}
+        data = self.request(url, None, headers)
+        return 'ga:' + data['items'][0]['id']
+
+    def feed_query(self, params):
+        url = 'https://www.googleapis.com/analytics/v3/data/ga'
+        headers = {'Content-Type' : 'application/json'}
+        return self.request('%s?%s' % (url, urllib.urlencode(params)), None, headers)
+
+
+class GoogleSMAPI(Client):
+    user_agent = 'python-foauth2'
+    # OAuth API
+    auth_uri = 'https://accounts.google.com/o/oauth2/auth'
+    refresh_uri = 'https://accounts.google.com/o/oauth2/token'
+    scope = 'https://www.googleapis.com/auth/plus.me https://www.googleapis.com/auth/userinfo.email'
+
+    # data API
+    userinfo_uri = "https://www.googleapis.com/oauth2/v1/userinfo"
+    search_uri = "https://www.googleapis.com/plus/v1/activities"
+    list_uri = "https://www.googleapis.com/plus/v1/people/%s/activities/public"
+
+    def account_name(self):
+        url = "%s?%s" % (self.userinfo_uri, urllib.urlencode({"access_token":self.access_token}))
+        headers = {'Content-Type': 'application/json'}
+        data = self.request(url, None, headers)
+        return data.get("email", "Name Unavailable")
+
+    def search(self, query, count):
+        url = "%s?%s" % (self.search_uri,
+                         urllib.urlencode({"query":query, "maxResults":count, "orderBy":"recent"}))
+        headers = {'Content-Type': 'application/json'}
+        data = self.request(url, None, headers)
+        return data
+
+    def list(self, uid, count):
+        url = "%s?%s" % (self.list_uri % uid,
+                         urllib.urlencode({"maxResults":count}))
+        headers = {'Content-Type': 'application/json'}
+        data = self.request(url, None, headers)
+        return data
+
+
+class BufferAPI(GooglAPI):
+    auth_uri = 'https://bufferapp.com/oauth2/authorize'
+    refresh_uri = 'https://api.bufferapp.com/1/oauth2/token.json'
+    scope = None
+    service = 'buffer'
+    data_uri = 'https://api.bufferapp.com/1/'
+
+    def refresh_access_token(self, refresh_uri=None, refresh_token=None, grant_type='authorization_code'):
+        # Buffer wants a different grant_type than Google
+        return super(BufferAPI, self).refresh_access_token(refresh_uri=refresh_uri, refresh_token=refresh_token, grant_type=grant_type)
+
+    # data API
+    def get_profiles(self):
+        url = self.data_uri + 'profiles.json'
+        headers = {'Content-Type' : 'application/json'}
+        return self.request(url, None, headers)
+
+    def get_info(self):
+        url = self.data_uri + 'info/configuration.json'
+        headers = {'Content-Type' : 'application/json'}
+        return self.request(url, None, headers)
+
+    def get_pending(profile_id):
+        url = self.data_uri + 'profiles/%s/updates/pending.json' % profile_id
+        headers = {'Content-Type' : 'application/json'}
+        return self.request(url, None, headers)
+
+    def post_update(profile_ids, message):
+        url = self.data_uri + 'updates/create.json' % profile_id
+        import urllib
+        data = [('text', urllib.urlencode(message)), ('shorten', 1)]
+        for pid in profile_ids:
+            data.append(('profile_ids[]', pid))
+        body = urllib.urlencode(data)
+        return self.request(url, body, headers)
