@@ -32,11 +32,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 """
 
-import random
-import time
 import urllib
 import urllib2
-import urlparse
+import StringIO
 
 try:
     import simplejson
@@ -44,7 +42,7 @@ except ImportError:
     # Have django or are running in the Google App Engine?
     from django.utils import simplejson
 
-VERSION = '1.0'
+VERSION = '1.1'
 
 class Error(RuntimeError):
     """Generic exception class."""
@@ -70,23 +68,26 @@ class Client(object):
 
     def __init__(self, client_id, client_secret, access_token=None,
                  refresh_token=None, timeout=None):
-
         if not client_id or not client_secret:
             raise ValueError("Client_id and client_secret must be set.")
-
         self.client_id = client_id
         self.client_secret = client_secret
         self.timeout = timeout
         self.access_token = access_token
         self.refresh_token = refresh_token
+        self._authorization_redirect_uri = None
 
     def authorization_url(self, auth_uri=None, redirect_uri=None, scope=None, state=None,
                           access_type='offline', approval_prompt=None):
         """ Get the URL to redirect the user for client authorization """
         if redirect_uri is None:
             redirect_uri = self.redirect_uri
+        if redirect_uri:
+            self._authorization_redirect_uri = redirect_uri
         if auth_uri is None:
             auth_uri = self.auth_uri
+        if not auth_uri:
+            raise ValueError("an auth_uri is required")
         if scope is None:
             scope = self.scope
 
@@ -111,12 +112,12 @@ class Client(object):
 
     def redeem_code(self, refresh_uri=None, redirect_uri=None, code=None, scope=None):
         """Get an access token from the supplied code """
-
-        # prepare required args
         if code is None:
-            raise ValueError("Code must be set.")
+            raise ValueError("Code must be set. see see http://tools.ietf.org/html/draft-ietf-oauth-v2-20#section-4.1.3")
         if redirect_uri is None:
             redirect_uri = self.redirect_uri
+        if self._authorization_redirect_uri and redirect_uri != self._authorization_redirect_uri:
+            raise ValueError("redirect_uri mismatch. see http://tools.ietf.org/html/draft-ietf-oauth-v2-20#section-4.1.3")
         if refresh_uri is None:
             refresh_uri = self.refresh_uri
         if scope is None:
@@ -126,10 +127,10 @@ class Client(object):
             'client_id': self.client_id,
             'client_secret': self.client_secret,
             'code': code,
-            'redirect_uri': redirect_uri,
             'grant_type' : 'authorization_code',
         }
-
+        if redirect_uri is not None:
+            data['redirect_uri'] = redirect_uri
         if scope is not None:
             data['scope'] = scope
         body = urllib.urlencode(data)
@@ -225,6 +226,8 @@ class Client(object):
         raise ValueError(response.read())
 
     def handle_rate_limit(self):
+        import random
+        import time
         time.sleep(1 + random.random() * 3)
 
 
@@ -250,6 +253,44 @@ class GooglAPI(Client):
         stat_url = self.api_uri + '&' + urllib.urlencode(params)
         headers = {'Content-Type': 'application/json'}
         return self.request(stat_url, None, headers)
+
+
+class BufferAPI(GooglAPI):
+    auth_uri = 'https://bufferapp.com/oauth2/authorize'
+    refresh_uri = 'https://api.bufferapp.com/1/oauth2/token.json'
+    scope = None
+    service = 'buffer'
+    data_uri = 'https://api.bufferapp.com/1/'
+
+    def authorization_url(self, **kwargs):
+        # Buffer doesn't use access_type
+        kwargs['access_type'] = None
+        return super(BufferAPI, self).authorization_url(**kwargs)
+
+    def get_profiles(self):
+        url = self.data_uri + 'profiles.json'
+        headers = {'Content-Type' : 'application/json'}
+        return self.request(url, None, headers)
+
+    def get_info(self):
+        url = self.data_uri + 'info/configuration.json'
+        headers = {'Content-Type' : 'application/json'}
+        return self.request(url, None, headers)
+
+    def get_pending(self, profile_id):
+        url = self.data_uri + 'profiles/%s/updates/pending.json' % profile_id
+        headers = {'Content-Type' : 'application/json'}
+        return self.request(url, None, headers)
+
+    def post_update(self, profile_ids, message):
+        url = self.data_uri + 'updates/create.json'
+        import urllib
+        data = [('text', urllib.urlencode(message)), ('shorten', 1)]
+        for pid in profile_ids:
+            data.append(('profile_ids[]', pid))
+        body = urllib.urlencode(data)
+        headers = {'Content-type' : 'application/x-www-form-urlencoded'}
+        return self.request(url, body, headers)
 
 
 class GAnalyticsAPI(GooglAPI):
@@ -305,40 +346,3 @@ class GoogleSMAPI(Client):
         headers = {'Content-Type': 'application/json'}
         data = self.request(url, None, headers)
         return data
-
-
-class BufferAPI(GooglAPI):
-    auth_uri = 'https://bufferapp.com/oauth2/authorize'
-    refresh_uri = 'https://api.bufferapp.com/1/oauth2/token.json'
-    scope = None
-    service = 'buffer'
-    data_uri = 'https://api.bufferapp.com/1/'
-
-    def refresh_access_token(self, refresh_uri=None, refresh_token=None, grant_type='authorization_code'):
-        # Buffer wants a different grant_type than Google
-        return super(BufferAPI, self).refresh_access_token(refresh_uri=refresh_uri, refresh_token=refresh_token, grant_type=grant_type)
-
-    # data API
-    def get_profiles(self):
-        url = self.data_uri + 'profiles.json'
-        headers = {'Content-Type' : 'application/json'}
-        return self.request(url, None, headers)
-
-    def get_info(self):
-        url = self.data_uri + 'info/configuration.json'
-        headers = {'Content-Type' : 'application/json'}
-        return self.request(url, None, headers)
-
-    def get_pending(profile_id):
-        url = self.data_uri + 'profiles/%s/updates/pending.json' % profile_id
-        headers = {'Content-Type' : 'application/json'}
-        return self.request(url, None, headers)
-
-    def post_update(profile_ids, message):
-        url = self.data_uri + 'updates/create.json' % profile_id
-        import urllib
-        data = [('text', urllib.urlencode(message)), ('shorten', 1)]
-        for pid in profile_ids:
-            data.append(('profile_ids[]', pid))
-        body = urllib.urlencode(data)
-        return self.request(url, body, headers)
