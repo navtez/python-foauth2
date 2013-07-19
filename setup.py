@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 setup(name="foauth2",
-      version="0.9"
+      version="0.9",
       description="Library for OAuth version 2 'Bearer Token'",
       author="Jack Diederich",
       author_email="jackdied@gmail.com",
