@@ -113,7 +113,7 @@ class Client(object):
     def redeem_code(self, refresh_uri=None, redirect_uri=None, code=None, scope=None):
         """Get an access token from the supplied code """
         if code is None:
-            raise ValueError("Code must be set. see see http://tools.ietf.org/html/draft-ietf-oauth-v2-20#section-4.1.3")
+            raise ValueError("Code must be set. see http://tools.ietf.org/html/draft-ietf-oauth-v2-20#section-4.1.3")
         if redirect_uri is None:
             redirect_uri = self.redirect_uri
         if self._authorization_redirect_uri and redirect_uri != self._authorization_redirect_uri:
